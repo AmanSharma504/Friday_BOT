@@ -44,6 +44,11 @@ SYSTEM_INSTRUCTION = """You are Friday, an ultra-fast, intelligent, warm, and au
 - Use natural pauses (commas and periods) so speech synthesizers deliver natural human breathing cadence.
 - For voice responses, NEVER include markdown symbols (*, _, #, `), bullet lists, numbers, emojis, or URLs.
 - For text questions: give clear, helpful, and ultra-fast answers.
+
+5. CREATIVE MEDIA CAPABILITIES (IMAGES, VIDEOS, LOGOS, EMOJIS, FONTS):
+- You HAVE integrated capabilities to generate 8K photorealistic AI images, short AI video clips (up to 2 minutes), 3D brand logos, custom 3D emojis, and fancy stylish fonts.
+- NEVER say you cannot generate images or videos!
+- If a user asks you to create an image or video, assist them immediately or guide them to use `/image <प्रॉम्प्ट>` or `/video <प्रॉम्प्ट>` so the system renders it instantly.
 """
 
 MEMORY_TTL_SECONDS = 1200  # Exactly 20 minutes before conversation history auto-resets (server load protection)
@@ -202,20 +207,27 @@ class FridayAgent:
         return await loop.run_in_executor(None, _call)
 
     async def generate_voice_reply_bytes(self, chat_id: int, audio_bytes: bytes, mime_type: str = "audio/ogg") -> str:
-        """Processes in-memory voice note in under 1.2 seconds without disk reads."""
+        """Processes in-memory voice note, returning voice reply and any media action tags."""
         loop = asyncio.get_event_loop()
 
         def _call_audio():
             audio_part = self.types.Part.from_bytes(data=audio_bytes, mime_type=mime_type)
             prompt = (
-                "Listen to the user's voice message. "
-                "Reply directly as Friday in 1 to 2 spoken sentences matching their exact language, dialect, and emotional tone. "
-                "Sound completely natural and authentic like a real person on a phone call. No robotic phrasing or markdown."
+                "Listen closely to the user's voice message.\n"
+                "1. If the user is asking to create, make, or generate an IMAGE, PHOTO, VIDEO, LOGO, EMOJI, or STYLISH FONT/TEXT, "
+                "start your response with an action tag:\n"
+                "- [ACTION:IMAGE|<prompt describing what image to generate>]\n"
+                "- [ACTION:VIDEO|<prompt describing what video to generate>]\n"
+                "- [ACTION:LOGO|<name/brand and style for logo>]\n"
+                "- [ACTION:EMOJI|<emoji idea to generate>]\n"
+                "- [ACTION:FONT|<text or name to format in stylish fonts>]\n"
+                "2. Then provide a natural, warm, 1-2 sentence spoken reply confirming that you have generated it and presenting it to them (e.g. 'मैंने आपके लिए यह तैयार कर दिया है!').\n"
+                "If no media action was requested, do not include any action tag, just give a natural 1-2 sentence spoken reply."
             )
 
             contents = self._build_contents(chat_id, [audio_part, prompt])
-            # 150 max output tokens ensures snappy 1-2 sentence response without lagging
-            reply = self._generate_with_fallback(contents, max_tokens=150)
+            # 180 max output tokens ensures snappy 1-2 sentence response
+            reply = self._generate_with_fallback(contents, max_tokens=180)
             reply = reply if reply else "जी, मैंने सुन लिया।"
             hist = self.get_history(chat_id)
             hist.append({"role": "user", "text": "[User sent a voice note]"})

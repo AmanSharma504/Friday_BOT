@@ -3,6 +3,7 @@ import sys
 import json
 import logging
 import asyncio
+import re
 from pathlib import Path
 
 import telegram.error
@@ -1206,55 +1207,48 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         user_text = text
 
-    # Check for creative media intents directly in chat
+    # Intelligent Media Intent Detection (Captures natural Hindi/English queries anywhere in text)
     low_text = user_text.lower().strip()
-    if any(low_text.startswith(p) for p in ["image banao", "photo banao", "picture of", "generate image", "इमेज बनाओ", "फोटो बनाओ"]):
-        clean_p = user_text
-        for prefix in ["image banao", "photo banao", "picture of", "generate image", "इमेज बनाओ", "फोटो बनाओ"]:
-            if low_text.startswith(prefix):
-                clean_p = user_text[len(prefix):].strip(" :-")
-                break
-        context.args = clean_p.split()
-        await image_command(update, context)
-        return
 
-    if any(low_text.startswith(p) for p in ["video banao", "generate video", "clip banao", "वीडियो बनाओ"]):
-        clean_p = user_text
-        for prefix in ["video banao", "generate video", "clip banao", "वीडियो बनाओ"]:
-            if low_text.startswith(prefix):
-                clean_p = user_text[len(prefix):].strip(" :-")
-                break
-        context.args = clean_p.split()
+    has_img_word = any(w in low_text for w in ["image", "photo", "picture", "pic", "तस्वीर", "फोटो", "इमेज", "चित्र", "wallpaper", "रोबोट", "robot"])
+    has_vid_word = any(w in low_text for w in ["video", "वीडियो", "clip", "क्लिप", "animation", "reel"])
+    has_logo_word = any(w in low_text for w in ["logo", "लोगो", "emblem", "icon"])
+    has_emoji_word = any(w in low_text for w in ["emoji", "इमोजी", "sticker", "स्टिकर"])
+    has_font_word = any(w in low_text for w in ["font", "फॉन्ट", "stylish text", "fancy text", "स्टाइलिश"])
+    has_make_word = any(w in low_text for w in ["banao", "bana", "generate", "create", "make", "dikhao", "dikhana", "karo", "chahiye", "do", "draw", "bhejo"])
+
+    # 1. Video Request
+    if has_vid_word and has_make_word:
+        clean_p = re.sub(r"(video|वीडियो|clip|क्लिप|banao|bana|generate|create|make|dikhao|karo|chahiye|ek|mujhe|ki|ka|ke)", "", user_text, flags=re.IGNORECASE).strip(" :-")
+        context.args = clean_p.split() if clean_p else user_text.split()
         await video_command(update, context)
         return
 
-    if any(low_text.startswith(p) for p in ["logo banao", "generate logo", "design logo", "लोगो बनाओ"]):
-        clean_p = user_text
-        for prefix in ["logo banao", "generate logo", "design logo", "लोगो बनाओ"]:
-            if low_text.startswith(prefix):
-                clean_p = user_text[len(prefix):].strip(" :-")
-                break
-        context.args = clean_p.split()
+    # 2. Logo Request
+    if has_logo_word and has_make_word:
+        clean_p = re.sub(r"(logo|लोगो|emblem|icon|banao|bana|generate|create|make|design|karo|chahiye|ek|mujhe|ki|ka|ke)", "", user_text, flags=re.IGNORECASE).strip(" :-")
+        context.args = clean_p.split() if clean_p else user_text.split()
         await logo_command(update, context)
         return
 
-    if any(low_text.startswith(p) for p in ["emoji banao", "sticker banao", "इमोजी बनाओ"]):
-        clean_p = user_text
-        for prefix in ["emoji banao", "sticker banao", "इमोजी बनाओ"]:
-            if low_text.startswith(prefix):
-                clean_p = user_text[len(prefix):].strip(" :-")
-                break
-        context.args = clean_p.split()
+    # 3. Emoji Request
+    if has_emoji_word and has_make_word:
+        clean_p = re.sub(r"(emoji|इमोजी|sticker|स्टिकर|banao|bana|generate|create|make|karo|chahiye|ek|mujhe|ki|ka|ke)", "", user_text, flags=re.IGNORECASE).strip(" :-")
+        context.args = clean_p.split() if clean_p else user_text.split()
         await emoji_command(update, context)
         return
 
-    if any(low_text.startswith(p) for p in ["font badlo", "stylish font", "fancy text", "स्टाइलिश फॉन्ट"]):
-        clean_p = user_text
-        for prefix in ["font badlo", "stylish font", "fancy text", "स्टाइलिश फॉन्ट"]:
-            if low_text.startswith(prefix):
-                clean_p = user_text[len(prefix):].strip(" :-")
-                break
-        context.args = clean_p.split()
+    # 4. Image / Photo Request (Handles 'robot ki photo banao', 'lion ki image', etc.)
+    if has_img_word and has_make_word:
+        clean_p = re.sub(r"(image|photo|picture|pic|तस्वीर|फोटो|इमेज|चित्र|wallpaper|banao|bana|generate|create|make|dikhao|dikhana|karo|chahiye|do|draw|ek|mujhe|ki|ka|ke)", "", user_text, flags=re.IGNORECASE).strip(" :-")
+        context.args = clean_p.split() if clean_p else user_text.split()
+        await image_command(update, context)
+        return
+
+    # 5. Font Styling Request
+    if has_font_word:
+        clean_p = re.sub(r"(font|फॉन्ट|stylish text|fancy text|स्टाइलिश|badlo|karo|banao|likho|me|mein)", "", user_text, flags=re.IGNORECASE).strip(" :-")
+        context.args = clean_p.split() if clean_p else user_text.split()
         await font_command(update, context)
         return
 
@@ -1324,8 +1318,21 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
         mime_type = "audio/ogg" if update.message.voice else "audio/mp3"
 
-        # 2. Ultra-fast AI response via Gemini 3.1 Flash Lite (In-Memory, max 150 tokens)
-        reply_text = await agent.generate_voice_reply_bytes(chat.id, audio_bytes, mime_type=mime_type)
+        # 2. Ultra-fast AI response via Gemini 3.1 Flash Lite (In-Memory)
+        reply_raw = await agent.generate_voice_reply_bytes(chat.id, audio_bytes, mime_type=mime_type)
+
+        # Parse potential media action tag [ACTION:TYPE|PARAM]
+        action_match = re.search(r"\[ACTION:(IMAGE|VIDEO|LOGO|EMOJI|FONT)\|([^\]]+)\]", reply_raw)
+        media_action = None
+        media_param = None
+        reply_text = reply_raw
+        if action_match:
+            media_action = action_match.group(1).upper()
+            media_param = action_match.group(2).strip()
+            reply_text = re.sub(r"\[ACTION:[^\]]+\]", "", reply_raw).strip()
+
+        if not reply_text:
+            reply_text = "जी, मैंने आपका काम कर दिया है!"
 
         # 3. High-speed Cartesia synthesis directly to memory (Zero Disk I/O, 24kHz, Keep-Alive Session)
         active_voice = user_voices.get(chat.id, CARTESIA_VOICE_ID)
@@ -1351,6 +1358,50 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 )
         else:
             await update.message.reply_text(reply_text, reply_to_message_id=update.message.message_id if is_group else None)
+
+        # 4. Seamlessly deliver the requested creative media directly into the chat!
+        if media_action and media_param:
+            loop = asyncio.get_event_loop()
+            try:
+                if media_action == "IMAGE":
+                    img_data = await loop.run_in_executor(None, generate_ai_image, media_param)
+                    await update.message.reply_photo(
+                        photo=InputFile(io.BytesIO(img_data), filename="ai_image.jpg"),
+                        caption=f"🎨 **Friday AI Generated Image**\n📝 `{media_param}`\n\n🛡️ *Verified AI Generated Content*",
+                        parse_mode=constants.ParseMode.MARKDOWN,
+                    )
+                elif media_action == "VIDEO":
+                    vid_path = await loop.run_in_executor(None, generate_ai_video, media_param, 15)
+                    with open(vid_path, "rb") as f:
+                        vid_b = f.read()
+                    try:
+                        os.remove(vid_path)
+                    except Exception:
+                        pass
+                    await update.message.reply_video(
+                        video=InputFile(io.BytesIO(vid_b), filename="ai_video.mp4"),
+                        caption=f"🎬 **Friday AI Generated Video**\n📝 `{media_param}`\n\n🛡️ *Verified AI Generated Media*",
+                        parse_mode=constants.ParseMode.MARKDOWN,
+                    )
+                elif media_action == "LOGO":
+                    logo_data = await loop.run_in_executor(None, generate_ai_logo, media_param)
+                    await update.message.reply_photo(
+                        photo=InputFile(io.BytesIO(logo_data), filename="ai_logo.jpg"),
+                        caption=f"🏷️ **Friday AI Brand Logo**\n👑 Name: `{media_param}`\n\n🛡️ *Verified AI Design*",
+                        parse_mode=constants.ParseMode.MARKDOWN,
+                    )
+                elif media_action == "EMOJI":
+                    emoji_data = await loop.run_in_executor(None, generate_ai_emoji, media_param)
+                    await update.message.reply_photo(
+                        photo=InputFile(io.BytesIO(emoji_data), filename="ai_emoji.jpg"),
+                        caption=f"😃 **Friday Custom 3D Emoji**\n✨ `{media_param}`",
+                        parse_mode=constants.ParseMode.MARKDOWN,
+                    )
+                elif media_action == "FONT":
+                    styled = generate_stylish_fonts(media_param)
+                    await update.message.reply_text(styled, parse_mode=constants.ParseMode.MARKDOWN)
+            except Exception as media_err:
+                logger.error(f"Error delivering media action {media_action}: {media_err}")
     except Exception as e:
         logger.error(f"Error processing voice: {e}", exc_info=True)
         await update.message.reply_text(f"वॉइस प्रोसेस करने में त्रुटि: {e}")
