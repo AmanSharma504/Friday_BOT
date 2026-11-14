@@ -1210,7 +1210,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Intelligent Media Intent Detection (Captures natural Hindi/English queries anywhere in text)
     low_text = user_text.lower().strip()
 
-    has_img_word = any(w in low_text for w in ["image", "photo", "picture", "pic", "तस्वीर", "फोटो", "इमेज", "चित्र", "wallpaper", "रोबोट", "robot"])
+    has_img_word = any(w in low_text for w in ["image", "photo", "picture", "pic", "तस्वीर", "फोटो", "इमेज", "चित्र", "wallpaper", "drawing"])
     has_vid_word = any(w in low_text for w in ["video", "वीडियो", "clip", "क्लिप", "animation", "reel"])
     has_logo_word = any(w in low_text for w in ["logo", "लोगो", "emblem", "icon"])
     has_emoji_word = any(w in low_text for w in ["emoji", "इमोजी", "sticker", "स्टिकर"])
