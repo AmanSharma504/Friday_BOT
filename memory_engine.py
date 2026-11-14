@@ -108,6 +108,16 @@ class FridayMemoryEngine:
     def get_language(self, chat_id: int) -> str:
         return self.get_chat_prefs(chat_id).get("language", "auto")
 
+    def set_voice(self, chat_id: int, voice_id: str):
+        """Persistently saves voice model selection per chat."""
+        prefs = self.get_chat_prefs(chat_id)
+        prefs["voice"] = voice_id
+        self._save()
+
+    def get_voice(self, chat_id: int, default_voice: str) -> str:
+        """Retrieves persistent voice model selection."""
+        return self.get_chat_prefs(chat_id).get("voice", default_voice)
+
     def learn_fact(self, chat_id: int, key: str, value: str):
         """Stores a learned fact for this chat / user."""
         prefs = self.get_chat_prefs(chat_id)

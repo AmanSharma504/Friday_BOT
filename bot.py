@@ -56,6 +56,7 @@ logger = logging.getLogger("FridayBot")
 
 # Global instances
 agent = None
+dashboard = None
 user_voices = {}
 group_paused = {}  # chat_id -> bool
 active_tags = {}   # chat_id -> bool (to stop /tagall)
@@ -131,11 +132,14 @@ def register_chat(chat, user=None):
         save_registered_chats(data)
 
 def is_bot_owner(user_id: int) -> bool:
-    """Strictly checks if user is the Bot Owner."""
+    """Strictly checks if user is the Bot Owner. Auto-claims if no owner is configured yet."""
     data = load_registered_chats()
     owner = data.get("owner_id") or BOT_OWNER_ID
     if not owner:
-        return False
+        data["owner_id"] = user_id
+        save_registered_chats(data)
+        logger.info(f"👑 Auto-registered user {user_id} as official Bot Owner!")
+        return True
     return str(user_id) == str(owner)
 
 # Available voices: Cartesia AI High-Fidelity Ultra-Natural Voices (Male & Female)
@@ -420,7 +424,7 @@ async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Provides link and info for the Live Central Web Dashboard."""
+    """Provides secure link and access PIN for the Live Central Web Dashboard."""
     user = update.effective_user
     if not user or not is_bot_owner(user.id):
         await update.message.reply_text("⛔ यह कमांड केवल बोट ओनर के लिए है।")
@@ -428,15 +432,19 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     port = os.environ.get("PORT", "8080")
     railway_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
-    url_info = f"https://{railway_url}" if railway_url else f"http://0.0.0.0:{port}"
+    url_base = f"https://{railway_url}" if railway_url else f"http://0.0.0.0:{port}"
+
+    token, pin = dashboard.generate_auth(user.id) if dashboard else ("auth_err", "000000")
+    direct_link = f"{url_base}/?auth={token}"
 
     msg = (
-        f"⚡ **F.R.I.D.A.Y. Central Web Dashboard (Live Two-Way Sync)**\n\n"
-        f"🌐 **Dashboard URL:** `{url_info}`\n"
-        f"🔌 **Internal Port:** `{port}`\n"
-        f"🛡️ **Status:** Active & Linked with Live Telegram Polling\n\n"
-        f"इस वेब डैशबोर्ड से आप सभी रजिस्टर्ड ग्रुप्स, चैनल्स, यूजर्स लाइव देख सकते हैं, "
-        f"ग्रुप्स से बोट को रिमोटली लीव करा सकते हैं, और सीधे ब्राउज़र से ब्रॉडकास्ट भेज सकते हैं।"
+        f"🔒 **F.R.I.D.A.Y. Secure Owner Dashboard**\n\n"
+        f"🌐 **Dashboard Portal:** `{url_base}`\n"
+        f"🔑 **Telegram Owner ID:** `{user.id}`\n"
+        f"🔢 **One-Time Access PIN:** `{pin}`\n\n"
+        f"⚡ **One-Click Direct Login Link:**\n"
+        f"👉 [Click Here to Open Dashboard]({direct_link})\n\n"
+        f"🛡️ *सुरक्षा प्रोटोकॉल सक्रिय: बिना Telegram ID और PIN के कोई भी अन्य व्यक्ति सेटिंग्स नहीं देख सकता।* "
     )
     await update.message.reply_text(msg, parse_mode=constants.ParseMode.MARKDOWN)
 
@@ -1487,6 +1495,17 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
         # 2. Ultra-fast AI response via Gemini 3.1 Flash Lite (In-Memory)
         reply_raw = await agent.generate_voice_reply_bytes(chat.id, audio_bytes, mime_type=mime_type)
 
+        # Parse potential voice change action [ACTION:SET_VOICE|TARGET]
+        voice_match = re.search(r"\[ACTION:SET_VOICE\|([^\]]+)\]", reply_raw, flags=re.IGNORECASE)
+        if voice_match:
+            v_target = voice_match.group(1).lower().strip()
+            v_choice = VOICE_ALIASES.get(v_target, v_target)
+            if v_choice in AVAILABLE_VOICES:
+                new_vid = AVAILABLE_VOICES[v_choice]["id"]
+                user_voices[chat.id] = new_vid
+                memory_engine.set_voice(chat.id, new_vid)
+            reply_raw = re.sub(r"\[ACTION:SET_VOICE\|[^\]]+\]", "", reply_raw).strip()
+
         # Parse potential media action tag [ACTION:TYPE|PARAM]
         action_match = re.search(r"\[ACTION:(IMAGE|VIDEO|LOGO|EMOJI|FONT)\|([^\]]+)\]", reply_raw)
         media_action = None
@@ -1501,7 +1520,7 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_text = "जी, मैंने आपका काम कर दिया है!"
 
         # 3. High-speed Cartesia synthesis directly to memory (Zero Disk I/O, 24kHz, Keep-Alive Session)
-        active_voice = user_voices.get(chat.id, AVAILABLE_VOICES["friday_001"]["id"])
+        active_voice = memory_engine.get_voice(chat.id, AVAILABLE_VOICES["friday_001"]["id"])
         tts_bytes = await text_to_speech_bytes(reply_text, voice=active_voice)
 
         caption = reply_text if len(reply_text) <= 1024 else (reply_text[:1020] + "...")
@@ -1581,7 +1600,7 @@ async def memory_cleanup_job(context: ContextTypes.DEFAULT_TYPE):
         agent.cleanup_expired_memory()
 
 def main():
-    global agent
+    global agent, dashboard
 
     print("\n" + "="*50)
     print("🚀 Initializing Friday AI Agent (Groups + Channels + Admin + Broadcast)...")

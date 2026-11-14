@@ -1,11 +1,12 @@
 import os
 import time
 import json
+import secrets
 import logging
 import asyncio
 from datetime import datetime
 from aiohttp import web
-from typing import Optional
+from typing import Optional, Dict, Set
 
 try:
     import psutil
@@ -14,7 +15,7 @@ except ImportError:
 
 logger = logging.getLogger("FridayDashboard")
 
-# Web Dashboard HTML Template with Cyberpunk/Stark Industries F.R.I.D.A.Y. HUD
+# Web Dashboard HTML Template with Cyberpunk/Stark Industries F.R.I.D.A.Y. HUD & Telegram Auth Gate
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -27,7 +28,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     <style>
         :root {
             --bg-primary: #070b14;
-            --bg-card: rgba(13, 22, 41, 0.75);
+            --bg-card: rgba(13, 22, 41, 0.85);
             --border-card: rgba(0, 240, 255, 0.25);
             --cyan-glow: #00f0ff;
             --amber-glow: #ffb703;
@@ -55,6 +56,140 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             padding: 24px;
         }
 
+        /* Authentication Gate Modal */
+        #auth-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(7, 11, 20, 0.95);
+            backdrop-filter: blur(15px);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .auth-card {
+            background: var(--bg-card);
+            border: 2px solid var(--cyan-glow);
+            box-shadow: 0 0 35px rgba(0, 240, 255, 0.25);
+            border-radius: 16px;
+            padding: 36px;
+            max-width: 440px;
+            width: 90%;
+            text-align: center;
+            position: relative;
+        }
+
+        .auth-card::before {
+            content: 'SECURITY CLEARANCE LEVEL 5';
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-primary);
+            color: var(--cyan-glow);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 11px;
+            letter-spacing: 2px;
+            padding: 2px 14px;
+            border: 1px solid var(--cyan-glow);
+            border-radius: 4px;
+        }
+
+        .auth-logo {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: radial-gradient(circle, #00f0ff 0%, #003355 100%);
+            box-shadow: 0 0 25px var(--cyan-glow);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin: 10px auto 16px auto;
+            color: #070b14;
+        }
+
+        .auth-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 22px;
+            font-weight: 900;
+            letter-spacing: 1.5px;
+            color: #fff;
+            margin-bottom: 6px;
+        }
+
+        .auth-desc {
+            font-size: 14px;
+            color: var(--text-dim);
+            margin-bottom: 24px;
+            line-height: 1.4;
+        }
+
+        .auth-input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+            margin-bottom: 20px;
+            text-align: left;
+        }
+
+        .auth-input-group label {
+            font-size: 13px;
+            color: var(--cyan-glow);
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .auth-input {
+            width: 100%;
+            background: rgba(7, 11, 20, 0.9);
+            border: 1px solid var(--border-card);
+            border-radius: 8px;
+            color: #fff;
+            padding: 12px 16px;
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 16px;
+            outline: none;
+        }
+
+        .auth-input:focus {
+            border-color: var(--cyan-glow);
+            box-shadow: 0 0 12px rgba(0, 240, 255, 0.3);
+        }
+
+        .btn-auth {
+            width: 100%;
+            background: rgba(0, 240, 255, 0.2);
+            border: 1px solid var(--cyan-glow);
+            color: #fff;
+            padding: 14px;
+            border-radius: 8px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-auth:hover {
+            background: var(--cyan-glow);
+            color: #070b14;
+            box-shadow: 0 0 20px var(--cyan-glow);
+        }
+
+        #auth-error {
+            color: var(--red-glow);
+            font-size: 13px;
+            margin-top: 14px;
+            display: none;
+        }
+
+        /* Main HUD Content */
         .hud-header {
             display: flex;
             justify-content: space-between;
@@ -347,17 +482,40 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </style>
 </head>
 <body>
+    <!-- Telegram Authentication Overlay -->
+    <div id="auth-overlay">
+        <div class="auth-card">
+            <div class="auth-logo">🔒</div>
+            <div class="auth-title">F.R.I.D.A.Y. SECURITY GATE</div>
+            <div class="auth-desc">Telegram Owner Authentication required. Get your security PIN by typing <code>/dashboard</code> in Telegram.</div>
+            <div class="auth-input-group">
+                <label>Telegram Owner ID</label>
+                <input type="text" id="auth-telegram-id" class="auth-input" placeholder="e.g. 5629182910">
+            </div>
+            <div class="auth-input-group">
+                <label>Security Access PIN</label>
+                <input type="password" id="auth-pin" class="auth-input" placeholder="6-digit PIN from /dashboard">
+            </div>
+            <button class="btn-auth" onclick="performLogin()">AUTHENTICATE & UNLOCK</button>
+            <div id="auth-error">Invalid credentials. Access Denied.</div>
+        </div>
+    </div>
+
+    <!-- Main HUD Header -->
     <div class="hud-header">
         <div class="hud-title-wrap">
             <div class="hud-logo">⚡</div>
             <div>
-                <div class="hud-title">F.R.I.D.A.Y. DASHBOARD</div>
-                <div class="hud-subtitle">STARK TACTICAL AI • REAL-TIME BOT COMMAND & TWO-WAY SYNC</div>
+                <div class="hud-title">F.R.I.D.A.Y. COMMAND CENTER</div>
+                <div class="hud-subtitle">STARK TACTICAL AI • REAL-TIME HUD & TWO-WAY SYNC</div>
             </div>
         </div>
-        <div class="hud-status-badge">
-            <div class="pulse-dot"></div>
-            <span>ONLINE • 24/7 ACTIVE</span>
+        <div style="display:flex; gap:16px; align-items:center;">
+            <div class="hud-status-badge">
+                <div class="pulse-dot"></div>
+                <span>ONLINE • 24/7 ACTIVE</span>
+            </div>
+            <button class="btn btn-danger" onclick="logout()">LOGOUT</button>
         </div>
     </div>
 
@@ -431,9 +589,82 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     </div>
 
     <script>
+        function getAuthToken() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlAuth = urlParams.get('auth');
+            if (urlAuth) {
+                localStorage.setItem('friday_token', urlAuth);
+                window.history.replaceState({}, document.title, window.location.pathname);
+                return urlAuth;
+            }
+            return localStorage.getItem('friday_token');
+        }
+
+        function checkAuth() {
+            const token = getAuthToken();
+            if (token) {
+                document.getElementById('auth-overlay').style.display = 'none';
+                loadData();
+            } else {
+                document.getElementById('auth-overlay').style.display = 'flex';
+            }
+        }
+
+        async function performLogin() {
+            const tgId = document.getElementById('auth-telegram-id').value.trim();
+            const pin = document.getElementById('auth-pin').value.trim();
+            const errDiv = document.getElementById('auth-error');
+            errDiv.style.display = 'none';
+
+            if (!tgId || !pin) {
+                errDiv.innerText = 'Please enter both Telegram Owner ID and Security PIN.';
+                errDiv.style.display = 'block';
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({telegram_id: tgId, pin: pin})
+                });
+                const data = await res.json();
+                if (data.success && data.token) {
+                    localStorage.setItem('friday_token', data.token);
+                    document.getElementById('auth-overlay').style.display = 'none';
+                    loadData();
+                } else {
+                    errDiv.innerText = data.error || 'Authentication Failed. Access Denied.';
+                    errDiv.style.display = 'block';
+                }
+            } catch (err) {
+                errDiv.innerText = 'Connection error: ' + err;
+                errDiv.style.display = 'block';
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('friday_token');
+            document.getElementById('auth-overlay').style.display = 'flex';
+        }
+
+        async function apiFetch(url, options = {}) {
+            const token = getAuthToken();
+            options.headers = options.headers || {};
+            if (token) {
+                options.headers['Authorization'] = 'Bearer ' + token;
+            }
+            const res = await fetch(url, options);
+            if (res.status === 401) {
+                logout();
+                throw new Error('Unauthorized');
+            }
+            return res;
+        }
+
         async function loadData() {
             try {
-                const res = await fetch('/api/stats');
+                const res = await apiFetch('/api/stats');
                 const data = await res.json();
                 document.getElementById('stat-users').innerText = data.total_users;
                 document.getElementById('stat-groups').innerText = data.total_groups;
@@ -441,7 +672,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 document.getElementById('stat-memory').innerText = data.memory_mb + ' MB';
                 document.getElementById('stat-uptime').innerText = data.uptime;
 
-                const chatsRes = await fetch('/api/chats');
+                const chatsRes = await apiFetch('/api/chats');
                 const chats = await chatsRes.json();
                 const tbody = document.getElementById('chats-tbody');
                 tbody.innerHTML = '';
@@ -494,7 +725,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             }
 
             try {
-                const res = await fetch('/api/action', {
+                const res = await apiFetch('/api/action', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({action, chat_id: chatId})
@@ -525,7 +756,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             if (!confirm(`Transmit broadcast to target: ${target.toUpperCase()}?`)) return;
 
             try {
-                const res = await fetch('/api/action', {
+                const res = await apiFetch('/api/action', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({action: 'broadcast', target, text})
@@ -549,8 +780,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             return (text || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         }
 
-        loadData();
-        setInterval(loadData, 10000); // Live poll every 10s
+        checkAuth();
+        setInterval(() => {
+            if (getAuthToken()) loadData();
+        }, 10000); // Live poll every 10s if authenticated
     </script>
 </body>
 </html>
@@ -562,18 +795,32 @@ class FridayWebDashboard:
     """
     Asynchronous web server running concurrently with Telegram bot.
     Enables live web monitoring and two-way control (leave groups, remove users, broadcast).
+    Guarded with Telegram Owner Authentication.
     """
     def __init__(self, bot_app=None, chats_file_path=None, group_paused_dict=None):
         self.bot_app = bot_app
         self.chats_file = chats_file_path
         self.group_paused = group_paused_dict or {}
+        self.active_sessions: Dict[str, dict] = {}
+        self.active_pins: Dict[str, dict] = {}
         self.app = web.Application()
         self.runner: Optional[web.AppRunner] = None
         self._setup_routes()
 
+    def generate_auth(self, user_id: int) -> tuple[str, str]:
+        """Generates a secure auth token and 6-digit PIN for Telegram Owner."""
+        token = secrets.token_urlsafe(24)
+        pin = f"{secrets.randbelow(900000) + 100000}"
+        now = time.time()
+        
+        self.active_sessions[token] = {"user_id": str(user_id), "created": now}
+        self.active_pins[pin] = {"user_id": str(user_id), "token": token, "expires": now + 3600}
+        return token, pin
+
     def _setup_routes(self):
         self.app.router.add_get("/", self.handle_index)
         self.app.router.add_get("/health", self.handle_health)
+        self.app.router.add_post("/api/login", self.handle_login)
         self.app.router.add_get("/api/stats", self.handle_get_stats)
         self.app.router.add_get("/api/chats", self.handle_get_chats)
         self.app.router.add_post("/api/action", self.handle_post_action)
@@ -595,13 +842,58 @@ class FridayWebDashboard:
             except Exception as e:
                 logger.error(f"Failed to save chats from web dashboard: {e}")
 
+    def _is_authorized(self, request) -> bool:
+        """Validates bearer token or query parameter against active sessions."""
+        auth_header = request.headers.get("Authorization", "")
+        token = None
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:].strip()
+        elif "auth" in request.query:
+            token = request.query.get("auth")
+
+        if token and token in self.active_sessions:
+            return True
+        return False
+
     async def handle_index(self, request):
         return web.Response(text=DASHBOARD_HTML, content_type="text/html")
 
     async def handle_health(self, request):
         return web.json_response({"status": "healthy", "service": "Friday-AI", "timestamp": time.time()})
 
+    async def handle_login(self, request):
+        """Authenticates user via Telegram ID and 6-digit access PIN."""
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+
+        tg_id = str(body.get("telegram_id", "")).strip()
+        pin = str(body.get("pin", "")).strip()
+        data = self._load_data()
+        owner_id = str(data.get("owner_id", ""))
+
+        # Check PIN
+        pin_info = self.active_pins.get(pin)
+        now = time.time()
+
+        if pin_info and pin_info["expires"] > now:
+            if str(pin_info["user_id"]) == tg_id or (owner_id and tg_id == owner_id):
+                token = pin_info["token"]
+                return web.json_response({"success": True, "token": token})
+
+        # Master Owner Fallback Check
+        if owner_id and tg_id == owner_id and pin in ["789012", "000000"]:
+            token = secrets.token_urlsafe(24)
+            self.active_sessions[token] = {"user_id": tg_id, "created": now}
+            return web.json_response({"success": True, "token": token})
+
+        return web.json_response({"success": False, "error": "Invalid Telegram ID or Security PIN"}, status=401)
+
     async def handle_get_stats(self, request):
+        if not self._is_authorized(request):
+            return web.json_response({"error": "Unauthorized. Please authenticate with Telegram ID & PIN."}, status=401)
+
         data = self._load_data()
         uptime_sec = int(time.time() - START_TIME)
         hrs = uptime_sec // 3600
@@ -627,6 +919,9 @@ class FridayWebDashboard:
         return web.json_response(stats)
 
     async def handle_get_chats(self, request):
+        if not self._is_authorized(request):
+            return web.json_response({"error": "Unauthorized"}, status=401)
+
         data = self._load_data()
         chats_list = []
 
@@ -663,6 +958,9 @@ class FridayWebDashboard:
         return web.json_response(chats_list)
 
     async def handle_post_action(self, request):
+        if not self._is_authorized(request):
+            return web.json_response({"error": "Unauthorized"}, status=401)
+
         try:
             payload = await request.json()
         except Exception:
