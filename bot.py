@@ -6,8 +6,10 @@ import asyncio
 from pathlib import Path
 
 import telegram.error
+import io
 from telegram import (
     Update,
+    InputFile,
     constants,
     ChatPermissions,
     ChatMemberAdministrator,
@@ -33,7 +35,14 @@ from config import (
     validate_config,
 )
 from ai_agent import FridayAgent
-from voice_engine import text_to_speech
+from voice_engine import text_to_speech, text_to_speech_bytes
+from media_engine import (
+    generate_ai_image,
+    generate_ai_video,
+    generate_ai_logo,
+    generate_ai_emoji,
+    generate_stylish_fonts,
+)
 
 # Set up logging
 logging.basicConfig(
@@ -184,47 +193,69 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     first_name = user.first_name if user else "Friend"
     greeting = (
-        f"👋 नमस्ते {first_name}! मैं **Friday** हूँ — आपकी सुपर-फास्ट Gemini AI असिस्टेंट।\n\n"
-        f"🤖 **मुख्य फीचर्स:**\n"
-        f"• ✍️ **टेक्स्ट बातचीत:** टेक्स्ट में सवाल पूछें, तुरंत टेक्स्ट में सटीक जवाब मिलेगा।\n"
-        f"• 🎙️ **वॉइस नोट्स:** वॉइस नोट भेजें, मैं आपकी बात सुनकर 100% नेचुरल आवाज़ में बोलकर जवाब दूंगी।\n"
-        f"• 👥 **ग्रुप चैट्स:** ग्रुप में मुझे ऐड करें, मुझे टैग (`@Friday`) या रिप्लाई करके पूछें।\n"
-        f"• 📢 **ब्रॉडकास्ट & प्रमोशन:** बोट ओनर एक कमांड `/broadcast` से सभी DMs, ग्रुप्स और चैनल्स में प्रमोशन भेज सकते हैं।\n"
-        f"• 🛡️ **एडमिन पावर:** `/admin` से एडमिन बनाएं, `/banall` से सभी को बैन, `/muteall` / `/unmuteall` से म्यूट, `/unbanall` से अनबैन, और `/clear` से चैट साफ़ करें।\n"
-        f"• 🏷️ **टैग बोट:** `/tagall` से ग्रुप के सभी सदस्यों को टैग करें।\n\n"
+        f"👋 नमस्ते {first_name}! मैं **Friday** हूँ — आपकी पर्सनल AI असिस्टेंट।\n\n"
+        f"⚡ **सुपर-फास्ट मुख्य फीचर्स:**\n"
+        f"• ✍️ **टेक्स्ट बातचीत:** कोई भी सवाल पूछें, काम का सवाल हो या आम बातचीत, तुरंत सटीक जवाब मिलेगा।\n"
+        f"• 🎙️ **वॉइस नोट्स:** वॉइस नोट भेजें, मैं सुनकर 100% मानवीय आवाज़ में बोलकर जवाब दूंगी।\n"
+        f"• 🗣️ **सभी भारतीय भाषाएं:** हिंदी, पंजाबी, हरियाणवी, भोजपुरी, मराठी, तेलुगु, गुजराती व इंग्लिश में सहज बातचीत।\n"
+        f"• 🎨 **AI इमेज जनरेशन:** `/image <प्रॉम्प्ट>` से कोई भी 8K फोटो या आर्टवर्क जनरेट करें।\n"
+        f"• 🎬 **AI वीडियो क्लिप्स:** `/video <प्रॉम्प्ट>` से सिनेमैटिक वीडियो क्लिप्स बनाएं (अधिकतम 2 मिनट)।\n"
+        f"• 🏷️ **लोगो मेकर:** `/logo <नाम/ब्रांड>` से 3D आधुनिक लोगो बनाएं।\n"
+        f"• 😃 **3D इमोजी मेकर:** `/emoji <आइडिया>` से कस्टम इमोजी और स्टिकर्स बनाएं।\n"
+        f"• ✨ **स्टाइलिश फॉन्ट्स:** `/font <नाम या टेक्स्ट>` से 8+ फैंसी फॉन्ट स्टाइल्स बनाएं।\n"
+        f"• 👥 **ग्रुप चैट्स:** ग्रुप में मुझे जोड़ें और बेझिझक बात करें।\n\n"
+        f"🛡️ *सभी जेनरेटेड मीडिया पर सुरक्षा हेतु Friday AI का वॉटरमार्क रहता है।*\n"
         f"💡 सभी कमांड्स देखने के लिए `/help` टाइप करें।"
     )
     await update.message.reply_text(greeting, parse_mode=constants.ParseMode.MARKDOWN)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    register_chat(update.effective_chat, update.effective_user)
+    user = update.effective_user
+    chat = update.effective_chat
+    register_chat(chat, user)
+
     help_text = (
         "ℹ️ **Friday AI Commands Guide:**\n\n"
         "💬 **सामान्य & वॉइस:**\n"
-        "• `/voice` - Friday की आवाज़ बदलें (Siya, Sagar, Neha)\n"
-        "• `/reset` - पिछली बातचीत की याददाश्त रीसेट करें\n\n"
-        "👑 **बोट ओनर टूल्स (Promotion & Owner Only):**\n"
-        "• `/setowner` - पहली बार खुद को बोट ओनर क्लेम करें\n"
-        "• `/transferowner <ID>` - ओनरशिप ट्रांसफर करें\n"
-        "• `/broadcast <मैसेज>` - सभी ग्रुप्स, चैनल्स और पर्सनल DMs में ब्रॉडकास्ट\n"
-        "• `/broadcast_groups <मैसेज>` - केवल सभी ग्रुप्स में ब्रॉडकास्ट\n"
-        "• `/broadcast_channels <मैसेज>` - केवल सभी चैनल्स में ब्रॉडकास्ट\n"
-        "• `/broadcast_users <मैसेज>` - केवल पर्सनल DMs में ब्रॉडकास्ट\n"
-        "• `/stats` - कुल रजिस्टर्ड DMs, ग्रुप्स और चैनल्स की संख्या देखें\n\n"
-        "👥 **ग्रुप एडमिन & मॉडरेशन टूल्स (Admin Only):**\n"
-        "• `/admin` या `/promote` - सदस्य को एडमिन बनाएं (रिप्लाई या ID)\n"
-        "• `/demote` - एडमिन अधिकार हटाएं\n"
-        "• `/muteall` - पूरे ग्रुप को एक साथ म्यूट करें (केवल एडमिन बोल सकेंगे)\n"
-        "• `/unmuteall` - पूरे ग्रुप को तुरंत अनम्यूट करें\n"
-        "• `/banall` - ग्रुप के सभी सदस्यों को एक साथ बैन करें\n"
-        "• `/unbanall` - बैन हुए सभी सदस्यों को अनबैन करें और रिस्ट्रिक्शंस हटाएं\n"
-        "• `/clear` या `/purge [संख्या]` - चैट के मैसेज साफ़ करें\n"
-        "• `/tagall [मैसेज]` - सभी सदस्यों को टैग बोट की तरह मेंशन करें\n"
-        "• `/stoptag` या `/cancel` - टैगिंग रोकें\n"
-        "• `/ban` / `/unban` - व्यक्तिगत बैन/अनबैन करें\n"
-        "• `/mute` / `/unmute` - व्यक्तिगत म्यूट/अनम्यूट करें\n"
-        "• `/pause` / `/resume` - ग्रुप में AI को पॉज़ या चालू करें"
+        "• `/voice` - Friday की आवाज़ बदलें (Jacqueline, Siya, Sagar, Neha)\n"
+        "• `/reset` - पिछली बातचीत की याददाश्त रीसेट करें\n"
+        "• 🎙️ **वॉइस नोट्स:** किसी भी भाषा (हिंदी, पंजाबी, हरियाणवी आदि) में वॉइस नोट भेजें, मैं बोलकर जवाब दूंगी।\n\n"
+        "🎨 **क्रिएटिव & मीडिया टूल्स (New):**\n"
+        "• `/image <प्रॉम्प्ट>` - 8K AI फोटो जनरेट करें\n"
+        "• `/video <प्रॉम्प्ट>` - AI वीडियो क्लिप्स बनाएं (अधिकतम 2 मिनट)\n"
+        "• `/logo <नाम>` - आधुनिक 3D ब्रांड लोगो बनाएं\n"
+        "• `/emoji <आइडिया>` - कस्टम 3D इमोजी व स्टिकर बनाएं\n"
+        "• `/font <टेक्स्ट>` - नाम को 8+ स्टाइलिश फॉन्ट्स में बदलें\n"
     )
+
+    if chat and chat.type in [constants.ChatType.GROUP, constants.ChatType.SUPERGROUP]:
+        is_adm = await is_admin(chat.id, user.id, context) if user else False
+        if is_adm or (user and is_bot_owner(user.id)):
+            help_text += (
+                "\n👥 **ग्रुप एडमिन & मॉडरेशन टूल्स:**\n"
+                "• `/admin` या `/promote` - सदस्य को एडमिन बनाएं\n"
+                "• `/demote` - एडमिन अधिकार हटाएं\n"
+                "• `/muteall` / `/unmuteall` - पूरे ग्रुप को म्यूट / अनम्यूट करें\n"
+                "• `/banall` / `/unbanall` - पूरे ग्रुप को बैन / अनबैन करें\n"
+                "• `/clear` या `/purge [संख्या]` - चैट के मैसेज साफ़ करें\n"
+                "• `/tagall [मैसेज]` - ग्रुप मेंबर्स को मेंशन करें\n"
+                "• `/stoptag` - टैगिंग रोकें\n"
+                "• `/ban` / `/unban` - व्यक्तिगत बैन/अनबैन करें\n"
+                "• `/mute` / `/unmute` - व्यक्तिगत म्यूट/अनम्यूट करें\n"
+                "• `/pause` / `/resume` - ग्रुप में AI को रोकें या चालू करें\n"
+            )
+
+    if user and is_bot_owner(user.id):
+        help_text += (
+            "\n👑 **बोट ओनर टूल्स:**\n"
+            "• `/broadcast <मैसेज>` - सभी ग्रुप्स, चैनल्स और पर्सनल DMs में ब्रॉडकास्ट\n"
+            "• `/broadcast_groups <मैसेज>` - केवल सभी ग्रुप्स में ब्रॉडकास्ट\n"
+            "• `/broadcast_channels <मैसेज>` - केवल सभी चैनल्स में ब्रॉडकास्ट\n"
+            "• `/broadcast_users <मैसेज>` - केवल पर्सनल DMs में ब्रॉडकास्ट\n"
+            "• `/stats` - कुल रजिस्टर्ड चैट्स, ग्रुप्स और चैनल्स देखें\n"
+            "• `/transferowner <ID>` - ओनरशिप ट्रांसफर करें\n"
+        )
+
     await update.message.reply_text(help_text, parse_mode=constants.ParseMode.MARKDOWN)
 
 async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -263,6 +294,121 @@ async def voice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         valid = ", ".join(AVAILABLE_VOICES.keys())
         await update.message.reply_text(f"❌ अमान्य विकल्प। कृपया इनमें से चुनें: `{valid}`")
+
+# ==================== MEDIA & CREATIVE TOOLS (IMAGE, VIDEO, LOGO, EMOJI, FONT) ====================
+
+async def image_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generates an AI image with Friday watermark."""
+    chat = update.effective_chat
+    user = update.effective_user
+    register_chat(chat, user)
+
+    prompt = " ".join(context.args).strip() if context.args else ""
+    if not prompt:
+        await update.message.reply_text("💡 उपयोग: `/image <प्रॉम्प्ट>` (उदा. `/image a futuristic cyberpunk lion with neon lighting`)")
+        return
+
+    status_msg = await update.message.reply_text("🎨 **AI इमेज तैयार हो रही है...**")
+    try:
+        loop = asyncio.get_event_loop()
+        img_bytes = await loop.run_in_executor(None, generate_ai_image, prompt)
+        photo_file = InputFile(io.BytesIO(img_bytes), filename="ai_image.jpg")
+        caption = f"✨ **Friday AI Generated Image**\n📝 `{prompt}`\n\n🛡️ *Verified AI Generated Content*"
+        await update.message.reply_photo(photo=photo_file, caption=caption, parse_mode=constants.ParseMode.MARKDOWN)
+        await status_msg.delete()
+    except Exception as e:
+        logger.error(f"Error in image_command: {e}")
+        await status_msg.edit_text(f"❌ इमेज बनाने में त्रुटि: {e}")
+
+async def video_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generates an AI video (max 2 minutes) with Friday watermark."""
+    chat = update.effective_chat
+    user = update.effective_user
+    register_chat(chat, user)
+
+    prompt = " ".join(context.args).strip() if context.args else ""
+    if not prompt:
+        await update.message.reply_text("💡 उपयोग: `/video <प्रॉम्प्ट>` (उदा. `/video sunset over ocean with flying birds`)\n(अधिकतम अवधि: 2 मिनट)")
+        return
+
+    status_msg = await update.message.reply_text("🎬 **AI वीडियो क्लिप रेंडर हो रही है...** (कृपया थोड़ा इंतज़ार करें)")
+    try:
+        loop = asyncio.get_event_loop()
+        vid_path = await loop.run_in_executor(None, generate_ai_video, prompt, 15)
+        with open(vid_path, "rb") as f:
+            vid_bytes = f.read()
+        try:
+            os.remove(vid_path)
+        except Exception:
+            pass
+
+        video_file = InputFile(io.BytesIO(vid_bytes), filename="ai_video.mp4")
+        caption = f"🎬 **Friday AI Generated Video**\n📝 `{prompt}`\n\n🛡️ *Verified AI Generated Media (Max 2min)*"
+        await update.message.reply_video(video=video_file, caption=caption, parse_mode=constants.ParseMode.MARKDOWN)
+        await status_msg.delete()
+    except Exception as e:
+        logger.error(f"Error in video_command: {e}")
+        await status_msg.edit_text(f"❌ वीडियो बनाने में त्रुटि: {e}")
+
+async def logo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generates a professional logo emblem."""
+    chat = update.effective_chat
+    user = update.effective_user
+    register_chat(chat, user)
+
+    name = " ".join(context.args).strip() if context.args else ""
+    if not name:
+        await update.message.reply_text("💡 उपयोग: `/logo <ब्रांड या नाम>` (उदा. `/logo Apex Legends` या `/logo Yash Tech neon 3D`)")
+        return
+
+    status_msg = await update.message.reply_text("🏷️ **लोगो डिज़ाइन किया जा रहा है...**")
+    try:
+        loop = asyncio.get_event_loop()
+        logo_bytes = await loop.run_in_executor(None, generate_ai_logo, name)
+        photo_file = InputFile(io.BytesIO(logo_bytes), filename="ai_logo.jpg")
+        caption = f"🏷️ **Friday AI Brand Logo**\n👑 Name: `{name}`\n\n🛡️ *Verified AI Design*"
+        await update.message.reply_photo(photo=photo_file, caption=caption, parse_mode=constants.ParseMode.MARKDOWN)
+        await status_msg.delete()
+    except Exception as e:
+        logger.error(f"Error in logo_command: {e}")
+        await status_msg.edit_text(f"❌ लोगो बनाने में त्रुटि: {e}")
+
+async def emoji_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generates custom 3D emoji or sticker graphic."""
+    chat = update.effective_chat
+    user = update.effective_user
+    register_chat(chat, user)
+
+    prompt = " ".join(context.args).strip() if context.args else ""
+    if not prompt:
+        await update.message.reply_text("💡 उपयोग: `/emoji <आइडिया>` (उदा. `/emoji laughing robot with sunglasses`)")
+        return
+
+    status_msg = await update.message.reply_text("😃 **कस्टम 3D इमोजी तैयार हो रहा है...**")
+    try:
+        loop = asyncio.get_event_loop()
+        emoji_bytes = await loop.run_in_executor(None, generate_ai_emoji, prompt)
+        photo_file = InputFile(io.BytesIO(emoji_bytes), filename="ai_emoji.jpg")
+        caption = f"😃 **Friday Custom 3D Emoji**\n✨ `{prompt}`"
+        await update.message.reply_photo(photo=photo_file, caption=caption, parse_mode=constants.ParseMode.MARKDOWN)
+        await status_msg.delete()
+    except Exception as e:
+        logger.error(f"Error in emoji_command: {e}")
+        await status_msg.edit_text(f"❌ इमोजी बनाने में त्रुटि: {e}")
+
+async def font_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Converts text into multiple fancy stylish fonts."""
+    chat = update.effective_chat
+    user = update.effective_user
+    register_chat(chat, user)
+
+    text = " ".join(context.args).strip() if context.args else ""
+    if not text:
+        await update.message.reply_text("💡 उपयोग: `/font <टेक्स्ट या नाम>` (उदा. `/font Friday AI` या `/font Yash`)")
+        return
+
+    styled_text = generate_stylish_fonts(text)
+    await update.message.reply_text(styled_text, parse_mode=constants.ParseMode.MARKDOWN)
 
 # ==================== BOT OWNER & BROADCAST COMMANDS ====================
 
@@ -1060,6 +1206,58 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         user_text = text
 
+    # Check for creative media intents directly in chat
+    low_text = user_text.lower().strip()
+    if any(low_text.startswith(p) for p in ["image banao", "photo banao", "picture of", "generate image", "इमेज बनाओ", "फोटो बनाओ"]):
+        clean_p = user_text
+        for prefix in ["image banao", "photo banao", "picture of", "generate image", "इमेज बनाओ", "फोटो बनाओ"]:
+            if low_text.startswith(prefix):
+                clean_p = user_text[len(prefix):].strip(" :-")
+                break
+        context.args = clean_p.split()
+        await image_command(update, context)
+        return
+
+    if any(low_text.startswith(p) for p in ["video banao", "generate video", "clip banao", "वीडियो बनाओ"]):
+        clean_p = user_text
+        for prefix in ["video banao", "generate video", "clip banao", "वीडियो बनाओ"]:
+            if low_text.startswith(prefix):
+                clean_p = user_text[len(prefix):].strip(" :-")
+                break
+        context.args = clean_p.split()
+        await video_command(update, context)
+        return
+
+    if any(low_text.startswith(p) for p in ["logo banao", "generate logo", "design logo", "लोगो बनाओ"]):
+        clean_p = user_text
+        for prefix in ["logo banao", "generate logo", "design logo", "लोगो बनाओ"]:
+            if low_text.startswith(prefix):
+                clean_p = user_text[len(prefix):].strip(" :-")
+                break
+        context.args = clean_p.split()
+        await logo_command(update, context)
+        return
+
+    if any(low_text.startswith(p) for p in ["emoji banao", "sticker banao", "इमोजी बनाओ"]):
+        clean_p = user_text
+        for prefix in ["emoji banao", "sticker banao", "इमोजी बनाओ"]:
+            if low_text.startswith(prefix):
+                clean_p = user_text[len(prefix):].strip(" :-")
+                break
+        context.args = clean_p.split()
+        await emoji_command(update, context)
+        return
+
+    if any(low_text.startswith(p) for p in ["font badlo", "stylish font", "fancy text", "स्टाइलिश फॉन्ट"]):
+        clean_p = user_text
+        for prefix in ["font badlo", "stylish font", "fancy text", "स्टाइलिश फॉन्ट"]:
+            if low_text.startswith(prefix):
+                clean_p = user_text[len(prefix):].strip(" :-")
+                break
+        context.args = clean_p.split()
+        await font_command(update, context)
+        return
+
     stop_typing = asyncio.Event()
     typing_task = asyncio.create_task(
         keep_chat_action(context.bot, chat.id, constants.ChatAction.TYPING, stop_typing)
@@ -1118,55 +1316,47 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
         keep_chat_action(context.bot, chat.id, constants.ChatAction.RECORD_VOICE, stop_action)
     )
 
-    temp_in_file = None
-    temp_out_file = None
-
     try:
-        file_ext = "oga" if update.message.voice else "mp3"
-        temp_in_file = str(TEMP_AUDIO_DIR / f"in_{voice_obj.file_unique_id}.{file_ext}")
+        # 1. Download voice note directly to memory (Zero Disk I/O)
+        file_info = await context.bot.get_file(voice_obj.file_id)
+        audio_byte_array = await file_info.download_as_bytearray()
+        audio_bytes = bytes(audio_byte_array)
 
-        file_info = await context.bot.get_file(voice_obj.file_id, read_timeout=600.0, write_timeout=600.0)
-        await file_info.download_to_drive(custom_path=temp_in_file, read_timeout=600.0, write_timeout=600.0)
+        mime_type = "audio/ogg" if update.message.voice else "audio/mp3"
 
-        mime_type = "audio/ogg" if file_ext == "oga" else "audio/mp3"
-        reply_text = await agent.generate_voice_reply(chat.id, temp_in_file, mime_type=mime_type)
+        # 2. Ultra-fast AI response via Gemini 3.1 Flash Lite (In-Memory, max 150 tokens)
+        reply_text = await agent.generate_voice_reply_bytes(chat.id, audio_bytes, mime_type=mime_type)
 
+        # 3. High-speed Cartesia synthesis directly to memory (Zero Disk I/O, 24kHz, Keep-Alive Session)
         active_voice = user_voices.get(chat.id, CARTESIA_VOICE_ID)
-        temp_out_file = str(TEMP_AUDIO_DIR / f"out_{voice_obj.file_unique_id}.mp3")
-        await text_to_speech(reply_text, output_path=temp_out_file, voice=active_voice)
+        tts_bytes = await text_to_speech_bytes(reply_text, voice=active_voice)
 
-        with open(temp_out_file, "rb") as voice_file:
-            caption = reply_text if len(reply_text) <= 1024 else (reply_text[:1020] + "...")
+        caption = reply_text if len(reply_text) <= 1024 else (reply_text[:1020] + "...")
+
+        if tts_bytes:
+            voice_file = InputFile(io.BytesIO(tts_bytes), filename="voice.mp3")
             try:
                 await update.message.reply_voice(
                     voice=voice_file,
                     caption=caption,
                     reply_to_message_id=update.message.message_id if is_group else None,
-                    read_timeout=600.0,
-                    write_timeout=600.0,
                 )
             except Exception as voice_err:
                 logger.warning(f"reply_voice fallback: {voice_err}")
-                voice_file.seek(0)
+                audio_file = InputFile(io.BytesIO(tts_bytes), filename="audio.mp3")
                 await update.message.reply_audio(
-                    audio=voice_file,
+                    audio=audio_file,
                     caption=caption,
                     reply_to_message_id=update.message.message_id if is_group else None,
-                    read_timeout=600.0,
-                    write_timeout=600.0,
                 )
+        else:
+            await update.message.reply_text(reply_text, reply_to_message_id=update.message.message_id if is_group else None)
     except Exception as e:
         logger.error(f"Error processing voice: {e}", exc_info=True)
         await update.message.reply_text(f"वॉइस प्रोसेस करने में त्रुटि: {e}")
     finally:
         stop_action.set()
         await action_task
-        for p in [temp_in_file, temp_out_file]:
-            if p and os.path.exists(p):
-                try:
-                    os.remove(p)
-                except Exception:
-                    pass
 
 async def memory_cleanup_job(context: ContextTypes.DEFAULT_TYPE):
     """Periodically purges chats inactive for > 20 minutes to save server RAM."""
@@ -1205,6 +1395,16 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("reset", reset_command))
     app.add_handler(CommandHandler("voice", voice_command))
+
+    # Media & Creative Commands (Image, Video, Logo, Emoji, Font)
+    app.add_handler(CommandHandler("image", image_command))
+    app.add_handler(CommandHandler("img", image_command))
+    app.add_handler(CommandHandler("video", video_command))
+    app.add_handler(CommandHandler("vid", video_command))
+    app.add_handler(CommandHandler("logo", logo_command))
+    app.add_handler(CommandHandler("emoji", emoji_command))
+    app.add_handler(CommandHandler("font", font_command))
+    app.add_handler(CommandHandler("text", font_command))
 
     # Owner & Broadcast Commands
     app.add_handler(CommandHandler("setowner", setowner_command))

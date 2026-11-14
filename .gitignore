@@ -20,3 +20,9 @@ temp_audio/
 # Deployment / Local environment
 # Note: On GitHub, never commit private keys. Use .env.example as template.
 .env
+
+# Backups and archives (Local only - never publish to git)
+backup/
+backup_*/
+*.zip
+registered_chats.json
