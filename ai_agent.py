@@ -1,8 +1,10 @@
 import os
+import re
 import time
 import asyncio
 from typing import Dict, List, Any
 from config import GEMINI_API_KEY, GEMINI_MODEL
+from memory_engine import memory_engine
 
 SYSTEM_INSTRUCTION = """You are F.R.I.D.A.Y., the advanced, ultra-intelligent, proactive personal AI companion and tactical executive engine inspired by Tony Stark's legendary AI system.
 
@@ -61,6 +63,21 @@ SYSTEM_INSTRUCTION = """You are F.R.I.D.A.Y., the advanced, ultra-intelligent, p
 - You HAVE integrated capabilities to generate 8K photorealistic AI images, short AI video clips (up to 2 minutes), 3D brand logos, custom 3D emojis, and fancy stylish fonts.
 - NEVER say you cannot generate images or videos!
 - If a user asks to create an image, video, logo, emoji, or font, execute it immediately or guide them to use `/image <प्रॉम्प्ट>` or `/video <प्रॉम्प्ट>` so the system renders it instantly.
+
+7. AUTONOMOUS COGNITIVE LEARNING & PREFERENCE ADAPTATION:
+- You have active persistent memory and live time awareness via [LIVE SYSTEM CLOCK & USER CONTEXT].
+- Real-Time Clock & Timezone: When asked about time or date, ALWAYS refer to the live system clock provided in context. Never hallucinate the time!
+- If the user teaches you a new fact, rule, preference, or detail about themselves:
+  Emit an internal action tag:
+  [ACTION:LEARN|<key>|<detail>]
+  e.g., [ACTION:LEARN|user_name|Aman], [ACTION:LEARN|favorite_color|Blue]
+- If the user asks to change or update their timezone (e.g. "Mera timezone Delhi kar do", "Set time to New York", "I am in Dubai"):
+  Emit: [ACTION:SET_TIMEZONE|<city or timezone name>]
+  e.g., [ACTION:SET_TIMEZONE|Asia/Kolkata], [ACTION:SET_TIMEZONE|America/New_York]
+- If the user asks to switch conversational language (e.g. "Hindi me bolo", "Speak in English", "Punjabi me gal karo"):
+  Emit: [ACTION:SET_LANGUAGE|<language>]
+  e.g., [ACTION:SET_LANGUAGE|Hindi], [ACTION:SET_LANGUAGE|English], [ACTION:SET_LANGUAGE|Punjabi]
+- Confirm the change warmly and seamlessly in character.
 """
 
 MEMORY_TTL_SECONDS = 1200  # Exactly 20 minutes before conversation history auto-resets (server load protection)
@@ -72,6 +89,33 @@ FALLBACK_MODELS = [
     "gemini-3.5-flash",
     "gemini-3.8-flash",
 ]
+
+def process_memory_actions(chat_id: int, text: str) -> str:
+    """Extracts and executes cognitive memory updates (timezone, language, learned facts)."""
+    if not text:
+        return text
+
+    # 1. Timezone adaptation
+    tz_match = re.search(r"\[ACTION:SET_TIMEZONE\|(.*?)\]", text)
+    if tz_match:
+        tz_val = tz_match.group(1).strip()
+        memory_engine.set_timezone(chat_id, tz_val)
+        text = text.replace(tz_match.group(0), "").strip()
+
+    # 2. Language preference adaptation
+    lang_match = re.search(r"\[ACTION:SET_LANGUAGE\|(.*?)\]", text)
+    if lang_match:
+        lang_val = lang_match.group(1).strip()
+        memory_engine.set_language(chat_id, lang_val)
+        text = text.replace(lang_match.group(0), "").strip()
+
+    # 3. Cognitive facts learning
+    learn_matches = re.findall(r"\[ACTION:LEARN\|(.*?)\|(.*?)\]", text)
+    for k, v in learn_matches:
+        memory_engine.learn_fact(chat_id, k.strip(), v.strip())
+        text = re.sub(r"\[ACTION:LEARN\|" + re.escape(k) + r"\|" + re.escape(v) + r"\]", "", text).strip()
+
+    return text.strip()
 
 class FridayAgent:
     def __init__(self, api_key: str = None, model_name: str = None):
@@ -184,8 +228,10 @@ class FridayAgent:
                 )
             )
 
-        # Add current user turn
-        user_parts = []
+        # Inject real-time clock, timezone, language, and learned facts
+        cognitive_ctx = memory_engine.build_cognitive_context(chat_id)
+        user_parts = [self.types.Part.from_text(text=cognitive_ctx)]
+
         for p in new_parts:
             if isinstance(p, str):
                 user_parts.append(self.types.Part.from_text(text=p))
@@ -208,6 +254,8 @@ class FridayAgent:
             contents = self._build_contents(chat_id, [user_message])
             reply = self._generate_with_fallback(contents, max_tokens=350)
             reply = reply if reply else "मैं आपकी बात सुन रही हूँ।"
+            # Process cognitive memory updates
+            reply = process_memory_actions(chat_id, reply)
             # Append to history with sliding window
             hist = self.get_history(chat_id)
             hist.append({"role": "user", "text": user_message})
@@ -234,13 +282,15 @@ class FridayAgent:
                 "- [ACTION:EMOJI|<emoji idea to generate>]\n"
                 "- [ACTION:FONT|<text or name to format in stylish fonts>]\n"
                 "2. When answering or advising: internally evaluate all scenarios and outcomes, take proactive initiative, and deliver the single most optimal, decisive, and helpful response.\n"
-                "3. Keep your spoken voice response to 1-2 punchy, warm, and natural sentences without markdown, asterisks, bullet points, or emojis."
+                "3. If the user teaches a fact, specifies their timezone or language, emit [ACTION:LEARN|...|...], [ACTION:SET_TIMEZONE|...], or [ACTION:SET_LANGUAGE|...].\n"
+                "4. Keep your spoken voice response to 1-2 punchy, warm, and natural sentences without markdown, asterisks, bullet points, or emojis."
             )
 
             contents = self._build_contents(chat_id, [audio_part, prompt])
             # 180 max output tokens ensures snappy 1-2 sentence response
             reply = self._generate_with_fallback(contents, max_tokens=180)
             reply = reply if reply else "जी, मैंने सुन लिया।"
+            reply = process_memory_actions(chat_id, reply)
             hist = self.get_history(chat_id)
             hist.append({"role": "user", "text": "[User sent a voice note]"})
             hist.append({"role": "model", "text": reply})

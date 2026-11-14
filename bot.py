@@ -44,6 +44,8 @@ from media_engine import (
     generate_ai_emoji,
     generate_stylish_fonts,
 )
+from memory_engine import memory_engine
+from web_dashboard import FridayWebDashboard
 
 # Set up logging
 logging.basicConfig(
@@ -136,33 +138,79 @@ def is_bot_owner(user_id: int) -> bool:
         return False
     return str(user_id) == str(owner)
 
-# Available voices: Cartesia AI (Jacqueline / Native Hindi & English)
+# Available voices: Cartesia AI High-Fidelity Ultra-Natural Voices (Male & Female)
 AVAILABLE_VOICES = {
+    "friday_001": {
+        "id": "e6b71342-48f1-4c70-a13a-d197b176ff24",
+        "desc": "FRIDAY 001 (Refined Pure Conversational Indian Female, Crystal-Clear)",
+        "gender": "Female",
+    },
     "jacqueline": {
         "id": "9626c31c-bec5-4cca-baa8-f8ba9e84c8bc",
-        "desc": "Jacqueline (Cartesia — Warm, Expressive & Human-like, Default)",
+        "desc": "Jacqueline (Warm, Expressive & Tactically Composed, Default)",
+        "gender": "Female",
+    },
+    "kavya": {
+        "id": "ce45ddca-5f4b-4047-ada3-3fce2bc78acd",
+        "desc": "Kavya (Crisp & High-Intellect Indian Female)",
         "gender": "Female",
     },
     "siya": {
         "id": "4459a9a5-69d6-4680-b970-e13dc51845b6",
-        "desc": "Siya (100% Native Hindi Female — Conversational & Human-like)",
+        "desc": "Siya (100% Native Everyday Conversational Female)",
         "gender": "Female",
+    },
+    "ananya": {
+        "id": "ffa0d297-8cf9-4ec9-8e4e-99a59e939b02",
+        "desc": "Ananya (Smooth, Polished Professional Female)",
+        "gender": "Female",
+    },
+    "kaira": {
+        "id": "bc4324cb-08c4-4869-8fed-58436d02fdc2",
+        "desc": "Kaira (Warm Operational Specialist Female)",
+        "gender": "Female",
+    },
+    "varun": {
+        "id": "4cd9f881-58f7-4969-876a-00983214c362",
+        "desc": "Varun (Tactical, Razor-Sharp Indian Male — J.A.R.V.I.S. Style)",
+        "gender": "Male",
     },
     "sagar": {
         "id": "6303e5fb-a0a7-48f9-bb1a-dd42c216dc5d",
-        "desc": "Sagar (100% Native Hindi Male — Real Indian Everyday Accent)",
+        "desc": "Sagar (100% Native Real Indian Everyday Male)",
         "gender": "Male",
     },
-    "neha": {
-        "id": "47f3bbb1-e98f-4e0c-92c5-5f0325e1e206",
-        "desc": "Neha (Native Hindi Smart Virtual Assistant)",
-        "gender": "Female",
+    "aryan": {
+        "id": "9bde82b6-70e6-4df6-b964-e897cc526b2b",
+        "desc": "Aryan (Deep, Composed Executive Male)",
+        "gender": "Male",
+    },
+    "soham": {
+        "id": "b5fbb8ab-ef8c-4b92-b040-31b5ec2ec2e9",
+        "desc": "Soham (Friendly & Crisp Indian Male)",
+        "gender": "Male",
     },
     "rohan": {
         "id": "4877b818-c7fe-4c89-b1cf-eadf8e23da72",
-        "desc": "Rohan (Native Hindi Male — Calm & Confident)",
+        "desc": "Rohan (Calm & Confident Indian Male)",
         "gender": "Male",
     },
+}
+
+# Aliases for quick selection
+VOICE_ALIASES = {
+    "001": "friday_001",
+    "friday001": "friday_001",
+    "friday 001": "friday_001",
+    "female": "friday_001",
+    "ladki": "friday_001",
+    "women": "friday_001",
+    "girl": "friday_001",
+    "male": "varun",
+    "ladka": "varun",
+    "men": "varun",
+    "boy": "varun",
+    "jarvis": "varun",
 }
 
 async def is_admin(chat_id: int, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -270,31 +318,127 @@ async def voice_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
 
     if not args:
-        current = user_voices.get(chat_id, CARTESIA_VOICE_ID or "siya")
-        options = "\n".join([f"• `/voice {k}` — {v['desc']}" for k, v in AVAILABLE_VOICES.items()])
+        current = user_voices.get(chat_id, CARTESIA_VOICE_ID or "friday_001")
+        # Categorize
+        females = [f"• `/voice {k}` — {v['desc']}" for k, v in AVAILABLE_VOICES.items() if v.get("gender") == "Female"]
+        males = [f"• `/voice {k}` — {v['desc']}" for k, v in AVAILABLE_VOICES.items() if v.get("gender") == "Male"]
+
         msg = (
-            f"🎙️ **Friday Voice Settings (Natural Voice)**\n\n"
-            f"वर्तमान आवाज़ ID: `{current}`\n\n"
-            f"उपलब्ध आवाज़ें:\n{options}\n\n"
-            f"💡 बदलने के लिए टाइप करें:\n"
-            f"• `/voice siya` — नेचुरल हिंदी फ़ीमेल\n"
-            f"• `/voice sagar` — रियल इंडियन मेल"
+            f"🎙️ **F.R.I.D.A.Y. Voice Engine (Pristine High-Fidelity Neural Speech)**\n\n"
+            f"✨ **वर्तमान आवाज़:** `{current}`\n\n"
+            f"👩 **Female Voice Models:**\n" + "\n".join(females) + "\n\n"
+            f"👨 **Male Voice Models:**\n" + "\n".join(males) + "\n\n"
+            f"⚡ **त्वरित स्विचिंग:**\n"
+            f"• `/voice female` या `/voice 001` — शुद्ध व रिफाइंड फीमेल वॉइस\n"
+            f"• `/voice male` या `/voice jarvis` — शार्प व टैक्टिकल मेल वॉइस\n"
+            f"💡 *आप बोलकर या वॉइस नोट में भी 'मेल की आवाज़ में बोलो' या 'फीमेल की आवाज़ में बोलो' कह सकते हैं!*"
         )
         await update.message.reply_text(msg, parse_mode=constants.ParseMode.MARKDOWN)
         return
 
-    choice = args[0].lower().strip()
+    raw_choice = " ".join(args).lower().strip()
+    choice = VOICE_ALIASES.get(raw_choice, raw_choice)
+
     if choice in AVAILABLE_VOICES:
         selected_id = AVAILABLE_VOICES[choice]["id"]
         user_voices[chat_id] = selected_id
         await update.message.reply_text(
-            f"✅ Friday की आवाज़ सेट कर दी गई है: **{AVAILABLE_VOICES[choice]['desc']}**\n"
-            f"अब से आपको इसी आवाज़ में वॉइस रिप्लाई मिलेगा!",
+            f"✅ **Voice Profile Updated Successfully!**\n"
+            f"🎙️ **सक्रिय आवाज़:** {AVAILABLE_VOICES[choice]['desc']}\n"
+            f"अब Friday आपसे इसी रिफाइंड आवाज़ में संवाद करेगी।",
             parse_mode=constants.ParseMode.MARKDOWN,
         )
     else:
-        valid = ", ".join(AVAILABLE_VOICES.keys())
-        await update.message.reply_text(f"❌ अमान्य विकल्प। कृपया इनमें से चुनें: `{valid}`")
+        valid = ", ".join(list(AVAILABLE_VOICES.keys()) + ["male", "female", "001"])
+        await update.message.reply_text(f"❌ अमान्य विकल्प। कृपया इनमें से चुनें:\n`{valid}`")
+
+# ==================== COGNITIVE & PREFERENCE COMMANDS (TIMEZONE, LANGUAGE, CLOCK, DASHBOARD) ====================
+
+async def time_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Returns accurate real-time clock according to user's configured timezone."""
+    chat = update.effective_chat
+    user = update.effective_user
+    register_chat(chat, user)
+    time_str = memory_engine.get_current_time_str(chat.id)
+    await update.message.reply_text(f"🕒 **F.R.I.D.A.Y. Real-Time Clock:**\n`{time_str}`", parse_mode=constants.ParseMode.MARKDOWN)
+
+async def timezone_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Views or dynamically sets timezone for the user/chat."""
+    chat = update.effective_chat
+    user = update.effective_user
+    register_chat(chat, user)
+
+    if not context.args:
+        current_tz = memory_engine.get_timezone(chat.id)
+        current_time = memory_engine.get_current_time_str(chat.id)
+        await update.message.reply_text(
+            f"🌍 **Current Timezone:** `{current_tz}`\n"
+            f"🕒 **Current Time:** `{current_time}`\n\n"
+            f"बदलने के लिए: `/timezone <city या timezone>`\n"
+            f"उदाहरण: `/timezone Delhi` या `/timezone New York` या `/timezone Dubai`",
+            parse_mode=constants.ParseMode.MARKDOWN
+        )
+        return
+
+    tz_input = " ".join(context.args).strip()
+    res = memory_engine.set_timezone(chat.id, tz_input)
+    if res:
+        time_str = memory_engine.get_current_time_str(chat.id)
+        await update.message.reply_text(
+            f"✅ **Timezone Successfully Updated!**\n"
+            f"🌍 **New Timezone:** `{res}`\n"
+            f"🕒 **Current Time:** `{time_str}`",
+            parse_mode=constants.ParseMode.MARKDOWN
+        )
+    else:
+        await update.message.reply_text(
+            f"❌ अमान्य टाइमज़ोन: `{tz_input}`। कृपया कोई मान्य शहर (जैसे Delhi, Mumbai, Dubai, London, New York) या IANA टाइमज़ोन (Asia/Kolkata) लिखें।",
+            parse_mode=constants.ParseMode.MARKDOWN
+        )
+
+async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Sets preferred conversational language for Friday."""
+    chat = update.effective_chat
+    user = update.effective_user
+    register_chat(chat, user)
+
+    if not context.args:
+        curr_lang = memory_engine.get_language(chat.id)
+        await update.message.reply_text(
+            f"🗣️ **Current Preferred Language:** `{curr_lang}`\n\n"
+            f"बदलने के लिए: `/language <language>`\n"
+            f"उदाहरण: `/language Hindi`, `/language English`, `/language Punjabi`, `/language auto`",
+            parse_mode=constants.ParseMode.MARKDOWN
+        )
+        return
+
+    new_lang = " ".join(context.args).strip()
+    memory_engine.set_language(chat.id, new_lang)
+    await update.message.reply_text(
+        f"✅ **भाषा प्राथमिकता अपडेट हो गई!**\nअब Friday आपसे प्राथमिकता अनुसार `{new_lang}` में संवाद करेगी।",
+        parse_mode=constants.ParseMode.MARKDOWN
+    )
+
+async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Provides link and info for the Live Central Web Dashboard."""
+    user = update.effective_user
+    if not user or not is_bot_owner(user.id):
+        await update.message.reply_text("⛔ यह कमांड केवल बोट ओनर के लिए है।")
+        return
+
+    port = os.environ.get("PORT", "8080")
+    railway_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+    url_info = f"https://{railway_url}" if railway_url else f"http://0.0.0.0:{port}"
+
+    msg = (
+        f"⚡ **F.R.I.D.A.Y. Central Web Dashboard (Live Two-Way Sync)**\n\n"
+        f"🌐 **Dashboard URL:** `{url_info}`\n"
+        f"🔌 **Internal Port:** `{port}`\n"
+        f"🛡️ **Status:** Active & Linked with Live Telegram Polling\n\n"
+        f"इस वेब डैशबोर्ड से आप सभी रजिस्टर्ड ग्रुप्स, चैनल्स, यूजर्स लाइव देख सकते हैं, "
+        f"ग्रुप्स से बोट को रिमोटली लीव करा सकते हैं, और सीधे ब्राउज़र से ब्रॉडकास्ट भेज सकते हैं।"
+    )
+    await update.message.reply_text(msg, parse_mode=constants.ParseMode.MARKDOWN)
 
 # ==================== MEDIA & CREATIVE TOOLS (IMAGE, VIDEO, LOGO, EMOJI, FONT) ====================
 
@@ -1252,6 +1396,28 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         await font_command(update, context)
         return
 
+    # 6. Natural Voice Switching Request ("voice badlo", "male voice karo", "female awaz me bolo")
+    has_voice_word = any(w in low_text for w in ["voice", "आवाज़", "आवाज", "awaz"])
+    has_change_word = any(w in low_text for w in ["change", "badlo", "badal", "switch", "karo", "kar do", "me", "mein"])
+    if has_voice_word and has_change_word:
+        if any(w in low_text for w in ["male", "ladka", "man", "men", "boy", "varun", "sagar"]):
+            user_voices[chat.id] = AVAILABLE_VOICES["varun"]["id"]
+            await update.message.reply_text("✅ Friday की आवाज़ पुरुष मॉडल (**Varun — J.A.R.V.I.S. Tactical Male**) में सेट कर दी गई है!")
+            return
+        elif any(w in low_text for w in ["female", "ladki", "woman", "women", "girl", "001", "friday_001", "jacqueline", "kavya", "siya"]):
+            user_voices[chat.id] = AVAILABLE_VOICES["friday_001"]["id"]
+            await update.message.reply_text("✅ Friday की आवाज़ महिला मॉडल (**FRIDAY 001 — Refined Pure Conversational Female**) में सेट कर दी गई है!")
+            return
+        else:
+            curr_voice = user_voices.get(chat.id, AVAILABLE_VOICES["friday_001"]["id"])
+            if curr_voice == AVAILABLE_VOICES["varun"]["id"]:
+                user_voices[chat.id] = AVAILABLE_VOICES["friday_001"]["id"]
+                await update.message.reply_text("✅ Friday की आवाज़ बदल कर महिला मॉडल (**FRIDAY 001**) पर सेट कर दी गई है!")
+            else:
+                user_voices[chat.id] = AVAILABLE_VOICES["varun"]["id"]
+                await update.message.reply_text("✅ Friday की आवाज़ बदल कर पुरुष मॉडल (**Varun Tactical Male**) पर सेट कर दी गई है!")
+            return
+
     stop_typing = asyncio.Event()
     typing_task = asyncio.create_task(
         keep_chat_action(context.bot, chat.id, constants.ChatAction.TYPING, stop_typing)
@@ -1335,7 +1501,7 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
             reply_text = "जी, मैंने आपका काम कर दिया है!"
 
         # 3. High-speed Cartesia synthesis directly to memory (Zero Disk I/O, 24kHz, Keep-Alive Session)
-        active_voice = user_voices.get(chat.id, CARTESIA_VOICE_ID)
+        active_voice = user_voices.get(chat.id, AVAILABLE_VOICES["friday_001"]["id"])
         tts_bytes = await text_to_speech_bytes(reply_text, voice=active_voice)
 
         caption = reply_text if len(reply_text) <= 1024 else (reply_text[:1020] + "...")
@@ -1433,11 +1599,28 @@ def main():
         pool_timeout=600.0,
     )
 
+    dashboard = FridayWebDashboard(
+        bot_app=None,
+        chats_file_path=str(CHATS_FILE),
+        group_paused_dict=group_paused,
+    )
+
+    async def post_init(application):
+        dashboard.bot_app = application
+        port = int(os.environ.get("PORT", "8080"))
+        await dashboard.start(host="0.0.0.0", port=port)
+        logger.info(f"⚡ F.R.I.D.A.Y. Central Web Dashboard active on port {port}")
+
+    async def post_shutdown(application):
+        await dashboard.stop()
+
     app = (
         ApplicationBuilder()
         .token(TELEGRAM_BOT_TOKEN)
         .request(request_config)
         .get_updates_request(request_config)
+        .post_init(post_init)
+        .post_shutdown(post_shutdown)
         .build()
     )
 
@@ -1446,6 +1629,14 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("reset", reset_command))
     app.add_handler(CommandHandler("voice", voice_command))
+
+    # Cognitive, Clock & Web Dashboard Commands
+    app.add_handler(CommandHandler("time", time_command))
+    app.add_handler(CommandHandler("timezone", timezone_command))
+    app.add_handler(CommandHandler("tz", timezone_command))
+    app.add_handler(CommandHandler("language", language_command))
+    app.add_handler(CommandHandler("lang", language_command))
+    app.add_handler(CommandHandler("dashboard", dashboard_command))
 
     # Media & Creative Commands (Image, Video, Logo, Emoji, Font)
     app.add_handler(CommandHandler("image", image_command))

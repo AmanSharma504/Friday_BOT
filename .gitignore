@@ -26,3 +26,4 @@ backup/
 backup_*/
 *.zip
 registered_chats.json
+memory_store.json
