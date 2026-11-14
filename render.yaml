@@ -1,0 +1,17 @@
+services:
+  - type: worker
+    name: friday-telegram-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python3 bot.py
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CARTESIA_API_KEY
+        sync: false
+      - key: CARTESIA_VOICE_ID
+        value: 4459a9a5-69d6-4680-b970-e13dc51845b6
+      - key: GEMINI_MODEL
+        value: gemini-3.1-flash-lite

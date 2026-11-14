@@ -1,0 +1,22 @@
+# Virtual Environment
+.venv/
+env/
+venv/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary audio files
+temp_audio/
+*.oga
+*.mp3
+*.wav
+
+# OS files
+.DS_Store
+
+# Deployment / Local environment
+# Note: On GitHub, never commit private keys. Use .env.example as template.
+.env
